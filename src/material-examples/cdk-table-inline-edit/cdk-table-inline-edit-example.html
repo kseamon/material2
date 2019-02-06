@@ -10,7 +10,7 @@
     <th cdk-header-cell *cdkHeaderCellDef> Name </th>
     <td cdk-cell *cdkCellDef="let element"
         cdkInlineEdit="nameEdit"
-        cdkRowHover="nameHover">
+        cdkCellOverlay="nameHover">
       {{element.name}}
       <ng-template #nameEdit>
         Inline edit {{element.name}}!

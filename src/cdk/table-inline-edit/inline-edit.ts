@@ -12,6 +12,8 @@ import {TemplatePortal} from '@angular/cdk/portal';
 import {BehaviorSubject, fromEvent, Observable, ReplaySubject, Subject} from 'rxjs';
 import {audit, debounceTime, distinctUntilChanged, first, mapTo, takeUntil} from 'rxjs/operators';
 
+import {CellEvents} from '../table/table';
+
 const HOVER_DELAY_MS = 50;
 
 export const CDK_INLINE_EDIT_OPENED = new InjectionToken<Subject<boolean>>('cdk_ieo');
@@ -53,7 +55,7 @@ export class CdkTableInlineEdit<T> implements OnDestroy {
       overlay: Overlay,
       @Inject(CDK_INLINE_EDIT_OPENED) readonly opened: Subject<boolean>,
       viewContainerRef: ViewContainerRef,) {
-    this.opened.pipe(distinctUntilChanged()).subscribe((open) => {
+    this.opened.pipe(distinctUntilChanged()).subscribe((open) => {console.log('inline edit opened', open);
       if (open && this.cdkInlineEdit) {
         if (!this.overlayRef) {
           // TODO: work out details of positioning relative to cell.
@@ -138,6 +140,7 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
   constructor(
       protected readonly elementRef: ElementRef,
       @Optional() @Inject(CDK_ROW_HOVER) protected hoverState: HoverState,
+      @Optional() protected readonly cellEvents: CellEvents,
       protected readonly overlay: Overlay,
       protected readonly viewContainerRef: ViewContainerRef,
       protected readonly ngZone: NgZone) {
@@ -145,13 +148,15 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
   }
   
   ngAfterViewInit() {
+    console.log('cell events', this.cellEvents);
+    console.log('hoverState', this.hoverState);
     if (!this.hoverState) {
       this.hoverState = new HoverState();
       connectHoverEvents(this.elementRef.nativeElement!, this.destroyed, this.ngZone, this.hoverState);
     }
     
     this.hoverState.hovered
-        .subscribe((isHovered) => {
+        .subscribe((isHovered) => {console.log('cell overlay', isHovered);
             if (isHovered && this.cdkCellOverlay) {
               if (!this.overlayRef) {
                 // TODO: work out details of positioning over cell.
@@ -195,7 +200,7 @@ function connectHoverEvents(
                 takeUntil(destroyed),
                 debounceTime(HOVER_DELAY_MS),)),
             distinctUntilChanged(),)
-            .subscribe((isHovered) => {
+            .subscribe((isHovered) => {console.log('connectHoverEvents', isHovered);
               ngZone.run(() => {
                 hoverState.hovered.next(isHovered);
               });

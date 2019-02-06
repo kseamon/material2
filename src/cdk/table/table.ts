@@ -32,6 +32,7 @@ import {
   ViewContainerRef,
   ViewEncapsulation,
   Inject,
+  Injectable,
 } from '@angular/core';
 import {DOCUMENT} from '@angular/common';
 import {BehaviorSubject, Observable, of as observableOf, Subject, Subscription} from 'rxjs';
@@ -148,9 +149,10 @@ export interface RenderRow<T> {
   rowDef: CdkRowDef<T>;
 }
 
-/*export class CellEvents {
-  readonly
-}*/
+@Injectable()
+export class CellEvents {
+  
+}
 
 /**
  * A data table that can render a header row, data rows, and a footer row.
@@ -166,6 +168,7 @@ export interface RenderRow<T> {
   host: {
     'class': 'cdk-table',
   },
+  providers: [CellEvents],
   encapsulation: ViewEncapsulation.None,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
