@@ -32,7 +32,6 @@ import {
   ViewContainerRef,
   ViewEncapsulation,
   Inject,
-  Injectable,
 } from '@angular/core';
 import {DOCUMENT} from '@angular/common';
 import {BehaviorSubject, Observable, of as observableOf, Subject, Subscription} from 'rxjs';

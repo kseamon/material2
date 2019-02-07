@@ -32,7 +32,6 @@ export class HoverState {
 @Directive({
   selector: '[cdkInlineEdit]',
   host: {
-    '[style.position]': '"relative"', // TODO: use css?
     'tabIndex': '0',
     '(keyup.enter)': 'opened.next(true)', // todo: event delegation
     // TODO: aria something?
@@ -108,25 +107,96 @@ export abstract class Destroyable implements OnDestroy {
   }
 }
 
+export interface EventState {
+  readonly cell: HTMLElement|null;
+  readonly value: boolean;
+}
+
+@Injectable()
+export class InlineEditEvents {
+  readonly editing = new Subject<EventState>();
+  readonly hovering = new Subject<HTMLElement|null>();
+  readonly mouseMove = new Subject<MouseEvent>();
+
+  readonly hoveringRow = this.hovering.pipe(
+      map(cell => cell.closest('.cdk-row')),
+      distinctUntilChanged(),
+      shareReplay(1));
+
+  editingCell(cell: HTMLElement) {
+    return editing.pipe(
+    // todo - might need to play with this a bit
+        map(state => state.cell === cell && state.value),
+        distinctUntilChanged(),
+        // rejoin zone? / detect changes?
+        );
+  }
+
+  hoveringOnRow(element: HTMLElement) {
+    const row = element.closest('.cdk-row');
+    
+    
+    // super important that this is outside of zone
+    return this.hoveringRow.pipe(
+        map(hoveredRow => hoveredRow === row),
+        audit(() => this.mouseMove.pipe(debounceTime(HOVER_DELAY_MS)),
+        distinctUntilChanged(),
+        );
+  }
+  
+/*  hoveringOnCell(element: HTMLElement) {
+    const cell = element.closest('.cdk-cell');
+
+    // super important that this is outside of zone
+    return this.hovering.pipe(
+        map(hoverCell => hoverCell === cell),
+        audit(() => this.mouseMove.pipe(debounceTime(HOVER_DELAY_MS)),
+        distinctUntilChanged(),
+        );
+  }*/
+}
+
 @Directive({
-  selector: '[cdkRowHover]',
-  providers: [
-    {
-      provide: CDK_ROW_HOVER,
-      useClass: HoverState,
-    }
-  ]
+  selector: 'table[cdk-table][inline-editable], cdk-table[inline-editable]',
+  providers: [InlineEditEvents],
 })
-export class CdkTableRowHover extends Destroyable implements AfterViewInit {
+export class CdkTableInlineEditable extends Destroyable implements AfterViewInit {
   constructor(
       protected readonly elementRef: ElementRef,
-      @Inject(CDK_ROW_HOVER) protected readonly hoverState: HoverState,
+      protected readonly events: InlineEditEvents,
       protected readonly ngZone: NgZone) {
     super();
   }
   
   ngAfterViewInit() {
-    connectHoverEvents(this.elementRef.nativeElement!, this.destroyed, this.ngZone, this.hoverState);
+    const element = this.elementRef.nativeElement!;
+
+    // todo - zone/cd stuff
+
+    const takeUntilDestroyed = () => takeUntil(this.destroyed);
+    const toClosestCell = () => map(event: Event => event.target.closest('.cdk-cell'));
+
+    fromEvent(element, 'mouseover').pipe(
+        takeUntilDestroyed(),
+        toClosestCell(),
+        distinctUntilChanged(),
+        tap(e => console.log('mouseover', e)),
+        ).subscribe(this.events.hovering);
+    fromEvent(element, 'mouseleave').pipe(
+        takeUntilDestroyed(),
+        mapTo(null),
+        tap(e => console.log('mouseleave')),
+        ).subscribe(this.events.hovering);
+    fromEvent(element, 'mousemove').pipe(
+        takeUntilDestroyed(),
+        tap(e => console.log('mousemove', e)),
+        ).subscribe(this.events.mouseMove);
+    
+    fromEvent(element, 'keyup').pipe(
+        takeUntilDestroyed(),
+        filter(event => event.key === 'Enter')
+        toClosestCell())
+        .subscribe(this.events.editing);
   }
 }
 
@@ -138,8 +208,7 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
   
   constructor(
       protected readonly elementRef: ElementRef,
-      @Optional() @Inject(CDK_ROW_HOVER) protected hoverState: HoverState,
-      @Optional() protected readonly cellEvents: CellEvents,
+      @Inject(CDK_ROW_HOVER) protected inlineEditEvents: InlineEditEvents,
       protected readonly viewContainerRef: ViewContainerRef,
       protected readonly ngZone: NgZone,
       protected readonly templateRef: TemplateRef<any>) {
@@ -147,17 +216,11 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
   }
   
   ngAfterViewInit() {
-    console.log('cell events', this.cellEvents);
-    console.log('hoverState', this.hoverState);
-    if (!this.hoverState) {
-      this.hoverState = new HoverState();
-      // todo - replace this hackery with cell events (but with a better name)
-/*      connectHoverEvents(this.elementRef.nativeElement!.parentNode, this.destroyed, this.ngZone, this.hoverState);*/
-    }
+    console.log('inline edit events', this.inlineEditEvents);
     
-    this.hoverState.hovered
-        .subscribe((isHovered) => {console.log('cell overlay', isHovered, this.templateRef);
-            if (isHovered) {
+    this.inlineEditEvents.hoveringOnRow()
+        .subscribe(isHovering => {console.log('cell overlay', isHovering, this.templateRef);
+            if (isHovering) {
               if (!this.viewRef) {
                 // Not doing any positioning in CDK version. Material version
                 // will absolutely position on right edge of cell.
