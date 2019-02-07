@@ -6,16 +6,15 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Inject, Injectable, InjectionToken, Input, OnDestroy, Optional, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
+import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Inject, Injectable, InjectionToken, Input, OnDestroy, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
-import {BehaviorSubject, fromEvent, Observable, ReplaySubject, Subject} from 'rxjs';
-import {audit, debounceTime, distinctUntilChanged, first, mapTo, takeUntil} from 'rxjs/operators';
+import {BehaviorSubject, fromEvent, timer, ReplaySubject, Subject} from 'rxjs';
+import {audit, debounceTime, distinctUntilChanged, filter, map, mapTo, takeUntil} from 'rxjs/operators';
 
-const HOVER_DELAY_MS = 50;
+const HOVER_DELAY_MS = 30;
 
 export const CDK_INLINE_EDIT_OPENED = new InjectionToken<Subject<boolean>>('cdk_ieo');
-export const CDK_ROW_HOVER = new InjectionToken<HoverState>('cdk_rh');
 
 export function booleanSubjectFactory() {
   return new BehaviorSubject(false);
@@ -108,23 +107,18 @@ export abstract class Destroyable implements OnDestroy {
 }
 
 export interface EventState {
-  readonly cell: HTMLElement|null;
+  readonly cell: Element|null;
   readonly value: boolean;
 }
 
 @Injectable()
 export class InlineEditEvents {
   readonly editing = new Subject<EventState>();
-  readonly hovering = new Subject<HTMLElement|null>();
-  readonly mouseMove = new Subject<MouseEvent>();
+  readonly hovering = new Subject<Element|null>();
+  readonly mouseMove = new Subject<Element|null>();
 
-  readonly hoveringRow = this.hovering.pipe(
-      map(cell => cell.closest('.cdk-row')),
-      distinctUntilChanged(),
-      shareReplay(1));
-
-  editingCell(cell: HTMLElement) {
-    return editing.pipe(
+  editingCell(cell: Element) {
+    return this.editing.pipe(
     // todo - might need to play with this a bit
         map(state => state.cell === cell && state.value),
         distinctUntilChanged(),
@@ -132,28 +126,19 @@ export class InlineEditEvents {
         );
   }
 
-  hoveringOnRow(element: HTMLElement) {
+  hoveringOnRow(element: Element) {
     const row = element.closest('.cdk-row');
     
-    
-    // super important that this is outside of zone
-    return this.hoveringRow.pipe(
-        map(hoveredRow => hoveredRow === row),
-        audit(() => this.mouseMove.pipe(debounceTime(HOVER_DELAY_MS)),
-        distinctUntilChanged(),
-        );
-  }
-  
-/*  hoveringOnCell(element: HTMLElement) {
-    const cell = element.closest('.cdk-cell');
-
     // super important that this is outside of zone
     return this.hovering.pipe(
-        map(hoverCell => hoverCell === cell),
-        audit(() => this.mouseMove.pipe(debounceTime(HOVER_DELAY_MS)),
+        map(hoveredRow => hoveredRow === row),
+        audit((hovering) => hovering ?
+            this.mouseMove.pipe(filter(hoveredRow => hoveredRow === row)) :
+            timer(HOVER_DELAY_MS)),
         distinctUntilChanged(),
+        filter((hovering, index) => hovering || index > 1),
         );
-  }*/
+  }
 }
 
 @Directive({
@@ -171,32 +156,30 @@ export class CdkTableInlineEditable extends Destroyable implements AfterViewInit
   ngAfterViewInit() {
     const element = this.elementRef.nativeElement!;
 
-    // todo - zone/cd stuff
+    const toClosestRow = () => map((event: UIEvent) => event.target && (event.target as Element).closest('.cdk-row'));
 
-    const takeUntilDestroyed = () => takeUntil(this.destroyed);
-    const toClosestCell = () => map(event: Event => event.target.closest('.cdk-cell'));
-
-    fromEvent(element, 'mouseover').pipe(
-        takeUntilDestroyed(),
-        toClosestCell(),
-        distinctUntilChanged(),
-        tap(e => console.log('mouseover', e)),
-        ).subscribe(this.events.hovering);
-    fromEvent(element, 'mouseleave').pipe(
-        takeUntilDestroyed(),
-        mapTo(null),
-        tap(e => console.log('mouseleave')),
-        ).subscribe(this.events.hovering);
-    fromEvent(element, 'mousemove').pipe(
-        takeUntilDestroyed(),
-        tap(e => console.log('mousemove', e)),
-        ).subscribe(this.events.mouseMove);
+    this.ngZone.runOutsideAngular(() => {
+      fromEvent<MouseEvent>(element, 'mouseover').pipe(
+          takeUntil(this.destroyed),
+          toClosestRow(),
+          distinctUntilChanged(),
+          ).subscribe(this.events.hovering);
+      fromEvent<MouseEvent>(element, 'mouseleave').pipe(
+          takeUntil(this.destroyed),
+          mapTo(null),
+          ).subscribe(this.events.hovering);
+      fromEvent<MouseEvent>(element, 'mousemove').pipe(
+          takeUntil(this.destroyed),
+          debounceTime(HOVER_DELAY_MS),
+          toClosestRow(),
+          ).subscribe(this.events.mouseMove);
     
-    fromEvent(element, 'keyup').pipe(
-        takeUntilDestroyed(),
-        filter(event => event.key === 'Enter')
-        toClosestCell())
-        .subscribe(this.events.editing);
+  /*    fromEvent<KeyboardEvent>(element, 'keyup').pipe(
+          takeUntil(this.destroyed),
+          filter(event => event.key === 'Enter'),
+          toClosestCell(),
+          ).subscribe(this.events.editing);*/
+    });
   }
 }
 
@@ -208,7 +191,7 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
   
   constructor(
       protected readonly elementRef: ElementRef,
-      @Inject(CDK_ROW_HOVER) protected inlineEditEvents: InlineEditEvents,
+      protected readonly inlineEditEvents: InlineEditEvents,
       protected readonly viewContainerRef: ViewContainerRef,
       protected readonly ngZone: NgZone,
       protected readonly templateRef: TemplateRef<any>) {
@@ -216,63 +199,31 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
   }
   
   ngAfterViewInit() {
-    console.log('inline edit events', this.inlineEditEvents);
-    
-    this.inlineEditEvents.hoveringOnRow()
-        .subscribe(isHovering => {console.log('cell overlay', isHovering, this.templateRef);
+    this.inlineEditEvents.hoveringOnRow(this.elementRef.nativeElement!.parentNode)
+        .pipe(takeUntil(this.destroyed))
+        .subscribe(isHovering => {
+          this.ngZone.run(() => {
             if (isHovering) {
               if (!this.viewRef) {
                 // Not doing any positioning in CDK version. Material version
                 // will absolutely position on right edge of cell.
                 this.viewRef = this.viewContainerRef.createEmbeddedView(this.templateRef, {});
-                console.log('eh?', this.viewRef, this.viewContainerRef, this.templateRef);
               } else {
                 this.viewContainerRef.insert(this.viewRef);
               }
             } else if (this.viewRef) {
               this.viewContainerRef.detach(this.viewContainerRef.indexOf(this.viewRef));
             }
+          });
         });
   }
-}
 
-function connectHoverEvents(
-    element: HTMLElement,
-    destroyed: Observable<void>,
-    ngZone: NgZone,
-    hoverState: HoverState) {
-      ngZone.runOutsideAngular(() => {
-        const hoverEventsUntilDestroyed = hoverState.hoverEvents.pipe(takeUntil(destroyed));
-        hoverEventsUntilDestroyed.subscribe(hoverState.activities);
-    
-        hoverEventsUntilDestroyed.pipe(
-            audit(() => hoverState.activities.pipe(
-                takeUntil(destroyed),
-                debounceTime(HOVER_DELAY_MS),)),
-            distinctUntilChanged(),)
-            .subscribe((isHovered) => {
-              ngZone.run(() => {
-                hoverState.hovered.next(isHovered);
-              });
-            });
-      });
-      
-      const enter = fromEvent(element, 'mouseenter')
-          .pipe(mapTo(true));
-      enter.subscribe(hoverState.hoverEvents);
-  
-      // Optimization: Defer registration of other mouse events until first enter.
-      enter
-          .pipe(
-              takeUntil(destroyed),
-              first(),)
-          .subscribe(() => {
-            fromEvent(element, 'mouseleave')
-                .pipe(mapTo(false))
-                .subscribe(hoverState.hoverEvents);
-            fromEvent(element, 'mousemove')
-                .subscribe(hoverState.activities);
-          });
+  ngOnDestroy() {
+    super.ngOnDestroy();
+    if (this.viewRef) {
+      this.viewRef.destroy();
+    }
+  }
 }
 
 // TODO: move to a separate file
