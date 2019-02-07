@@ -149,11 +149,6 @@ export interface RenderRow<T> {
   rowDef: CdkRowDef<T>;
 }
 
-@Injectable()
-export class CellEvents {
-  
-}
-
 /**
  * A data table that can render a header row, data rows, and a footer row.
  * Uses the dataSource input to determine the data to be rendered. The data can be provided either
@@ -168,7 +163,6 @@ export class CellEvents {
   host: {
     'class': 'cdk-table',
   },
-  providers: [CellEvents],
   encapsulation: ViewEncapsulation.None,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

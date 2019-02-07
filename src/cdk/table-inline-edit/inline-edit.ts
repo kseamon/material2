@@ -6,13 +6,11 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {AfterViewInit, Directive, ElementRef, Inject, Injectable, InjectionToken, Input, OnDestroy, Optional, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
+import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Inject, Injectable, InjectionToken, Input, OnDestroy, Optional, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
 import {BehaviorSubject, fromEvent, Observable, ReplaySubject, Subject} from 'rxjs';
 import {audit, debounceTime, distinctUntilChanged, first, mapTo, takeUntil} from 'rxjs/operators';
-
-import {CellEvents} from '../table/table';
 
 const HOVER_DELAY_MS = 50;
 
@@ -34,8 +32,9 @@ export class HoverState {
 @Directive({
   selector: '[cdkInlineEdit]',
   host: {
+    '[style.position]': '"relative"', // TODO: use css?
     'tabIndex': '0',
-    '(keypress.enter)': 'opened.next(true)',
+    '(keyup.enter)': 'opened.next(true)', // todo: event delegation
     // TODO: aria something?
   },
   providers: [
@@ -55,7 +54,7 @@ export class CdkTableInlineEdit<T> implements OnDestroy {
       overlay: Overlay,
       @Inject(CDK_INLINE_EDIT_OPENED) readonly opened: Subject<boolean>,
       viewContainerRef: ViewContainerRef,) {
-    this.opened.pipe(distinctUntilChanged()).subscribe((open) => {console.log('inline edit opened', open);
+    this.opened.pipe(distinctUntilChanged()).subscribe((open) => {
       if (open && this.cdkInlineEdit) {
         if (!this.overlayRef) {
           // TODO: work out details of positioning relative to cell.
@@ -131,19 +130,19 @@ export class CdkTableRowHover extends Destroyable implements AfterViewInit {
   }
 }
 
-@Directive({selector: '[cdkCellOverlay]'})
+@Directive({
+  selector: '[cdkCellOverlay]',
+})
 export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
-  @Input() cdkCellOverlay: TemplateRef<any>|null = null;
-
-  protected overlayRef?: OverlayRef;
+  protected viewRef: EmbeddedViewRef<any>|null = null;
   
   constructor(
       protected readonly elementRef: ElementRef,
       @Optional() @Inject(CDK_ROW_HOVER) protected hoverState: HoverState,
       @Optional() protected readonly cellEvents: CellEvents,
-      protected readonly overlay: Overlay,
       protected readonly viewContainerRef: ViewContainerRef,
-      protected readonly ngZone: NgZone) {
+      protected readonly ngZone: NgZone,
+      protected readonly templateRef: TemplateRef<any>) {
     super();
   }
   
@@ -152,35 +151,23 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
     console.log('hoverState', this.hoverState);
     if (!this.hoverState) {
       this.hoverState = new HoverState();
-      connectHoverEvents(this.elementRef.nativeElement!, this.destroyed, this.ngZone, this.hoverState);
+      // todo - replace this hackery with cell events (but with a better name)
+/*      connectHoverEvents(this.elementRef.nativeElement!.parentNode, this.destroyed, this.ngZone, this.hoverState);*/
     }
     
     this.hoverState.hovered
-        .subscribe((isHovered) => {console.log('cell overlay', isHovered);
-            if (isHovered && this.cdkCellOverlay) {
-              if (!this.overlayRef) {
-                // TODO: work out details of positioning over cell.
-                this.overlayRef = this.overlay.create({
-                  positionStrategy: this.overlay.position().flexibleConnectedTo(this.elementRef)
-                      .withGrowAfterOpen()
-                      .withPositions([{
-                        originX: 'end',
-                        originY: 'center',
-                        overlayX: 'end',
-                        overlayY: 'center',
-                      }]),
-                  scrollStrategy: this.overlay.scrollStrategies.reposition({autoClose: true}),
-                });
-                
-                connectHoverEvents(this.overlayRef.overlayElement, this.destroyed, this.ngZone, this.hoverState);
+        .subscribe((isHovered) => {console.log('cell overlay', isHovered, this.templateRef);
+            if (isHovered) {
+              if (!this.viewRef) {
+                // Not doing any positioning in CDK version. Material version
+                // will absolutely position on right edge of cell.
+                this.viewRef = this.viewContainerRef.createEmbeddedView(this.templateRef, {});
+                console.log('eh?', this.viewRef, this.viewContainerRef, this.templateRef);
+              } else {
+                this.viewContainerRef.insert(this.viewRef);
               }
-      
-              // TODO: handle unrelated detachments? Or maybe this wont need auto close.
-      
-              // TODO: Is it better to create a portal once and reuse it?
-              this.overlayRef.attach(new TemplatePortal(this.cdkCellOverlay, this.viewContainerRef));
-            } else if (this.overlayRef) {
-              this.overlayRef.detach();
+            } else if (this.viewRef) {
+              this.viewContainerRef.detach(this.viewContainerRef.indexOf(this.viewRef));
             }
         });
   }
@@ -200,7 +187,7 @@ function connectHoverEvents(
                 takeUntil(destroyed),
                 debounceTime(HOVER_DELAY_MS),)),
             distinctUntilChanged(),)
-            .subscribe((isHovered) => {console.log('connectHoverEvents', isHovered);
+            .subscribe((isHovered) => {
               ngZone.run(() => {
                 hoverState.hovered.next(isHovered);
               });

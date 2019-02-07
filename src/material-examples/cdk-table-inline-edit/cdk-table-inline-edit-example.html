@@ -9,15 +9,14 @@
   <ng-container cdkColumnDef="name">
     <th cdk-header-cell *cdkHeaderCellDef> Name </th>
     <td cdk-cell *cdkCellDef="let element"
-        cdkInlineEdit="nameEdit"
-        cdkCellOverlay="nameHover">
+        [cdkInlineEdit]="nameEdit">
       {{element.name}}
       <ng-template #nameEdit>
         Inline edit {{element.name}}!
       </ng-template>
-      <ng-template #nameHover>
+      <span *cdkCellOverlay>
         <button cdkInlineEditOpen>Open</button>
-      </ng-template>
+      </span>
     </td>
   </ng-container>
 
