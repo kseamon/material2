@@ -8,6 +8,7 @@
 
 import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Injectable, Input, OnDestroy, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
 /*import {DOCUMENT} from '@angular/common';*/
+import {FocusTrap, FocusTrapFactory} from '@angular/cdk/a11y';
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
 import {fromEvent, timer, ReplaySubject, Subject} from 'rxjs';
@@ -80,10 +81,12 @@ export abstract class Destroyable implements OnDestroy {
 export class CdkTableInlineEdit<T> extends Destroyable {
   @Input() cdkInlineEdit: TemplateRef<T>|null = null;
 
+  protected focusTrap?: FocusTrap;
   protected overlayRef?: OverlayRef;
 
   constructor(
       protected readonly elementRef: ElementRef,
+      protected readonly focusTrapFactory: FocusTrapFactory,
       protected readonly inlineEditEvents: InlineEditEvents,
       protected readonly ngZone: NgZone,
       protected readonly overlay: Overlay,
@@ -113,6 +116,25 @@ export class CdkTableInlineEdit<T> extends Destroyable {
                   scrollStrategy: this.overlay.scrollStrategies.reposition({autoClose: true}),
                 });
         
+                this.focusTrap = this.focusTrapFactory.create(this.overlayRef.overlayElement);
+        
+                this.overlayRef.keydownEvents()
+                    .pipe(filter(evt => evt.key === 'Enter' || evt.key === 'Escape'))
+                    .subscribe(() => {
+                      // todo - escape should undo any changes made
+                      // to this end, ideally this whole thing would be some
+                      // kind of form control...
+                      
+                      // alternatively make this something that we can forward
+                      // to it via a provider
+                      
+                      
+                      // todo - need to generalize this to something that the
+                      // popup can notify us of.
+                      this.overlayRef!.detach();
+                      this.elementRef.nativeElement!.focus();
+                    });
+        
                 this.overlayRef.detachments().subscribe(() => {
                   this.inlineEditEvents.doneEditingCell(this.elementRef.nativeElement!);
                 });
@@ -123,8 +145,9 @@ export class CdkTableInlineEdit<T> extends Destroyable {
       
               // TODO: Is it better to create a portal once and reuse it?
               this.overlayRef.attach(new TemplatePortal(this.cdkInlineEdit, this.viewContainerRef));
+              this.focusTrap!.focusInitialElementWhenReady();
+              
             } else if (this.overlayRef) {
-              // todo: this is not 100% working yet.
               this.overlayRef.detach();
       
               // TODO: Return focus to this cell?
@@ -178,7 +201,7 @@ export class CdkTableInlineEditable extends Destroyable implements AfterViewInit
           toClosest('cdk-row'),
           ).subscribe(this.events.mouseMove);
     
-      fromEvent<KeyboardEvent>(element, 'keyup').pipe(
+      fromEvent<KeyboardEvent>(element, 'keydown').pipe(
           takeUntil(this.destroyed),
           filter(event => event.key === 'Enter'),
           toClosest('cdk-cell'),
@@ -186,7 +209,7 @@ export class CdkTableInlineEditable extends Destroyable implements AfterViewInit
 
           // close inline edit on click out
 /*      if (document && document.body instanceof Element) {
-        fromEvent<MouseEvent>(element, 'keyup').pipe(
+        fromEvent<MouseEvent>(element, 'keydown').pipe(
             takeUntil(this.destroyed),
             filter(event => event.key === 'Enter'),
             toClosest('cdk-cell'),
@@ -258,15 +281,7 @@ export class CdkTableInlineEditOpen {
   }
 }
 
-/*@Component({
-  template: `
-    <form>
-      <ng-template [cdkPortalOutlet]="selectedPortal"></ng-template>
-    </div>
-  `
-})
-export class CdkTableInlineEditLens {
-}*/
+
 
 function closest(element: EventTarget|Element|null|undefined, className: string) {
   if (!(element instanceof Node)) return null;

@@ -14,7 +14,7 @@
       <ng-template #nameEdit>
         <div style="background-color: white;">
           Inline edit:
-          <input [(ngModel)]="element.name">
+          <input [(ngModel)]="element.name" cdkFocusInitial>
         </div>
       </ng-template>
       <span *cdkCellOverlay>
