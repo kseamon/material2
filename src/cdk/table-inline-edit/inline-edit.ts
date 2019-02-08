@@ -6,96 +6,14 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Inject, Injectable, InjectionToken, Input, OnDestroy, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
+import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Inject, Injectable, Input, OnDestroy, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
+/*import {DOCUMENT} from '@angular/common';*/
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
-import {BehaviorSubject, fromEvent, timer, ReplaySubject, Subject} from 'rxjs';
+import {fromEvent, timer, ReplaySubject, Subject} from 'rxjs';
 import {audit, debounceTime, distinctUntilChanged, filter, map, mapTo, takeUntil} from 'rxjs/operators';
 
 const HOVER_DELAY_MS = 30;
-
-export const CDK_INLINE_EDIT_OPENED = new InjectionToken<Subject<boolean>>('cdk_ieo');
-
-export function booleanSubjectFactory() {
-  return new BehaviorSubject(false);
-}
-
-@Injectable()
-export class HoverState {
-  readonly hovered = new BehaviorSubject(false);
-  
-  readonly activities = new Subject<unknown>();
-  readonly hoverEvents = new Subject<boolean>();
-}
-
-@Directive({
-  selector: '[cdkInlineEdit]',
-  host: {
-    'tabIndex': '0',
-    '(keyup.enter)': 'opened.next(true)', // todo: event delegation
-    // TODO: aria something?
-  },
-  providers: [
-    {
-      provide: CDK_INLINE_EDIT_OPENED,
-      useFactory: booleanSubjectFactory,
-    }
-  ]
-})
-export class CdkTableInlineEdit<T> implements OnDestroy {
-  @Input() cdkInlineEdit: TemplateRef<T>|null = null;
-
-  protected overlayRef?: OverlayRef;
-
-  constructor(
-      readonly elementRef: ElementRef,
-      overlay: Overlay,
-      @Inject(CDK_INLINE_EDIT_OPENED) readonly opened: Subject<boolean>,
-      viewContainerRef: ViewContainerRef,) {
-    this.opened.pipe(distinctUntilChanged()).subscribe((open) => {
-      if (open && this.cdkInlineEdit) {
-        if (!this.overlayRef) {
-          // TODO: work out details of positioning relative to cell.
-          this.overlayRef = overlay.create({
-            // TODO: this should be configurable
-            positionStrategy: overlay.position().flexibleConnectedTo(elementRef)
-                .withGrowAfterOpen()
-                .withPush()
-                .withPositions([{
-                  originX: 'start',
-                  originY: 'top',
-                  overlayX: 'start',
-                  overlayY: 'top',
-                }]),
-            scrollStrategy: overlay.scrollStrategies.reposition({autoClose: true}),
-          });
-          
-          this.overlayRef.detachments().pipe(mapTo(false)).subscribe(this.opened);
-        }
-
-        // For now, using a template portal but we should support a component
-        // version also.
-        
-        // TODO: Is it better to create a portal once and reuse it?
-        this.overlayRef.attach(new TemplatePortal(this.cdkInlineEdit, viewContainerRef));
-      } else if (this.overlayRef) {
-        this.overlayRef.detach();
-        
-        // TODO: Return focus to this cell?
-        // Depends on how the popup was closed (return vs click on different
-        // cell).
-      }
-    });
-  }
-  
-  ngOnDestroy() {
-    this.opened.complete();
-    
-    if (this.overlayRef) {
-      this.overlayRef.dispose();
-    }
-  }
-}
 
 export abstract class Destroyable implements OnDestroy {
   protected readonly destroyed = new ReplaySubject<void>();
@@ -106,28 +24,92 @@ export abstract class Destroyable implements OnDestroy {
   }
 }
 
-export interface EventState {
-  readonly cell: Element|null;
-  readonly value: boolean;
+@Directive({
+  selector: '[cdkInlineEdit]',
+  host: {
+    'tabIndex': '0',
+    // TODO: aria something?
+  }
+})
+export class CdkTableInlineEdit<T> extends Destroyable {
+  @Input() cdkInlineEdit: TemplateRef<T>|null = null;
+
+  protected overlayRef?: OverlayRef;
+
+  constructor(
+      elementRef: ElementRef,
+      inlineEditEvents: InlineEditEvents,
+      overlay: Overlay,
+      viewContainerRef: ViewContainerRef,) {
+    super();
+
+    inlineEditEvents.editingCell(elementRef.nativeElement!)
+        .pipe(takeUntil(this.destroyed))
+        .subscribe((open) => {
+          ngZone.run(() => {
+            if (open && this.cdkInlineEdit) {
+              if (!this.overlayRef) {
+                // TODO: work out details of positioning relative to cell.
+                this.overlayRef = overlay.create({
+                  // TODO: this should be configurable
+                  positionStrategy: overlay.position().flexibleConnectedTo(elementRef)
+                      .withGrowAfterOpen()
+                      .withPush()
+                      .withPositions([{
+                        originX: 'start',
+                        originY: 'top',
+                        overlayX: 'start',
+                        overlayY: 'top',
+                      }]),
+                  scrollStrategy: overlay.scrollStrategies.reposition({autoClose: true}),
+                });
+        
+                this.overlayRef.detachments().pipe(mapTo(false)).subscribe(this.opened);
+              }
+
+              // For now, using a template portal but we should support a component
+              // version also.
+      
+              // TODO: Is it better to create a portal once and reuse it?
+              this.overlayRef.attach(new TemplatePortal(this.cdkInlineEdit, viewContainerRef));
+            } else if (this.overlayRef) {
+              this.overlayRef.detach();
+      
+              // TODO: Return focus to this cell?
+              // Depends on how the popup was closed (return vs click on different
+              // cell).
+            }
+          });
+      });
+  }
+  
+  ngOnDestroy() {
+    super.ngOnDestroy();
+    
+    if (this.overlayRef) {
+      this.overlayRef.dispose();
+    }
+  }
 }
 
 @Injectable()
 export class InlineEditEvents {
-  readonly editing = new Subject<EventState>();
+  readonly editing = new Subject<Element|null>();
   readonly hovering = new Subject<Element|null>();
   readonly mouseMove = new Subject<Element|null>();
 
-  editingCell(cell: Element) {
+  editingCell(element: Element|EventTarget) {
+    const cell = closest(element, 'cdk-cell');
+    
     return this.editing.pipe(
     // todo - might need to play with this a bit
-        map(state => state.cell === cell && state.value),
+        map(state => state.cell === cell),
         distinctUntilChanged(),
-        // rejoin zone? / detect changes?
         );
   }
 
-  hoveringOnRow(element: Element) {
-    const row = element.closest('.cdk-row');
+  hoveringOnRow(element: Element|EventTarget) {
+    const row = closest(element, 'cdk-row');
     
     // super important that this is outside of zone
     return this.hovering.pipe(
@@ -147,6 +129,7 @@ export class InlineEditEvents {
 })
 export class CdkTableInlineEditable extends Destroyable implements AfterViewInit {
   constructor(
+/*      @Inject(DOCUMENT) protected document: any,*/
       protected readonly elementRef: ElementRef,
       protected readonly events: InlineEditEvents,
       protected readonly ngZone: NgZone) {
@@ -156,12 +139,12 @@ export class CdkTableInlineEditable extends Destroyable implements AfterViewInit
   ngAfterViewInit() {
     const element = this.elementRef.nativeElement!;
 
-    const toClosestRow = () => map((event: UIEvent) => event.target && (event.target as Element).closest('.cdk-row'));
+    const toClosest = (className: string) => map((event: UIEvent) => closest(event.target, className));
 
     this.ngZone.runOutsideAngular(() => {
       fromEvent<MouseEvent>(element, 'mouseover').pipe(
           takeUntil(this.destroyed),
-          toClosestRow(),
+          toClosest('cdk-row'),
           distinctUntilChanged(),
           ).subscribe(this.events.hovering);
       fromEvent<MouseEvent>(element, 'mouseleave').pipe(
@@ -171,14 +154,23 @@ export class CdkTableInlineEditable extends Destroyable implements AfterViewInit
       fromEvent<MouseEvent>(element, 'mousemove').pipe(
           takeUntil(this.destroyed),
           debounceTime(HOVER_DELAY_MS),
-          toClosestRow(),
+          toClosest('cdk-row'),
           ).subscribe(this.events.mouseMove);
     
-  /*    fromEvent<KeyboardEvent>(element, 'keyup').pipe(
+      fromEvent<KeyboardEvent>(element, 'keyup').pipe(
           takeUntil(this.destroyed),
           filter(event => event.key === 'Enter'),
-          toClosestCell(),
-          ).subscribe(this.events.editing);*/
+          toClosest('cdk-cell'),
+          ).subscribe(this.events.editing);
+
+          // close inline edit on click out
+/*      if (document && document.body instanceof Element) {
+        fromEvent<MouseEvent>(element, 'keyup').pipe(
+            takeUntil(this.destroyed),
+            filter(event => event.key === 'Enter'),
+            toClosest('cdk-cell'),
+            ).subscribe(this.events.editing);
+      }*/
     });
   }
 }
@@ -199,7 +191,7 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
   }
   
   ngAfterViewInit() {
-    this.inlineEditEvents.hoveringOnRow(this.elementRef.nativeElement!.parentNode)
+    this.inlineEditEvents.hoveringOnRow(this.elementRef.nativeElement!)
         .pipe(takeUntil(this.destroyed))
         .subscribe(isHovering => {
           this.ngZone.run(() => {
@@ -232,10 +224,25 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
 @Directive({
   selector: 'button[cdkInlineEditOpen]',
   host: {
-    '(click)': 'inlineEditOpened.next(true)',
+    '(click)': 'openInlineEdit()',
     'type': 'button', // Prevents accidental form submits.
   }
 })
 export class CdkTableInlineEditOpen {
-  constructor(@Inject(CDK_INLINE_EDIT_OPENED) readonly inlineEditOpened: Subject<boolean>) {}
+  constructor(
+      protected readonly elementRef: ElementRef,
+      protected readonly inlineEditEvents: InlineEditEvents,) {}
+      
+  openInlineEdit() {
+    this.inlineEditEvents.editing.next(closest(this.elementRef.nativeElement!, 'cdk-cell'));
+  }
+}
+
+function closest(element: EventTarget|Element|null|undefined, className: string) {
+  let curr = element;
+  while (curr && !curr.classList || !curr.classList.contains(className)) {
+    curr = curr.parentNode;
+  }
+  
+  return curr || null;
 }
