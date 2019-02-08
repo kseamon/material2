@@ -11,7 +11,7 @@ import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Injectable, Input
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
 import {fromEvent, timer, ReplaySubject, Subject} from 'rxjs';
-import {audit, debounceTime, distinctUntilChanged, filter, map, mapTo, takeUntil} from 'rxjs/operators';
+import {audit, debounceTime, distinctUntilChanged, filter, first, map, mapTo, takeUntil} from 'rxjs/operators';
 
 const HOVER_DELAY_MS = 30;
 
@@ -25,16 +25,15 @@ export class InlineEditEvents {
   
   constructor() {
     this.editing.subscribe(cell => {
-      currentlyEditing = cell;
+      this.currentlyEditing = cell;
     });
   }
 
   editingCell(element: Element|EventTarget) {
-    const cell = closest(element, 'cdk-cell');
-    
+    let cell: Element|null = null;
+
     return this.editing.pipe(
-    // todo - might need to play with this a bit
-        map(editCell => editCell === cell),
+        map(editCell => editCell === (cell || (cell = closest(element, 'cdk-cell')))),
         distinctUntilChanged(),
         );
   }
@@ -48,11 +47,11 @@ export class InlineEditEvents {
   }
 
   hoveringOnRow(element: Element|EventTarget) {
-    const row = closest(element, 'cdk-row');
+    let row: Element|null = null;
     
     // super important that this is outside of zone
     return this.hovering.pipe(
-        map(hoveredRow => hoveredRow === row),
+        map(hoveredRow => hoveredRow === (row || (row = closest(element, 'cdk-row')))),
         audit((hovering) => hovering ?
             this.mouseMove.pipe(filter(hoveredRow => hoveredRow === row)) :
             timer(HOVER_DELAY_MS)),
