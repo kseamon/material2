@@ -132,16 +132,17 @@ export class CdkTableInlineEdit<T> extends Destroyable {
                       // todo - need to generalize this to something that the
                       // popup can notify us of.
                       this.overlayRef!.detach();
-                      this.elementRef.nativeElement!.focus();
                     });
         
                 this.overlayRef.detachments().subscribe(() => {
+                  if (closest(document.activeElement, 'cdk-overlay-pane') ===
+                      this.overlayRef!.overlayElement) {
+                    this.elementRef.nativeElement!.focus();
+                  }
                   this.inlineEditEvents.doneEditingCell(this.elementRef.nativeElement!);
+                  
                 });
               }
-
-              // For now, using a template portal but we should support a component
-              // version also.
       
               // TODO: Is it better to create a portal once and reuse it?
               this.overlayRef.attach(new TemplatePortal(this.cdkInlineEdit, this.viewContainerRef));
@@ -149,10 +150,6 @@ export class CdkTableInlineEdit<T> extends Destroyable {
               
             } else if (this.overlayRef) {
               this.overlayRef.detach();
-      
-              // TODO: Return focus to this cell?
-              // Depends on how the popup was closed (return vs click on different
-              // cell).
             }
           });
       });
