@@ -21,6 +21,14 @@ export class InlineEditEvents {
   readonly hovering = new Subject<Element|null>();
   readonly mouseMove = new Subject<Element|null>();
 
+  protected currentlyEditing: Element|null = null;
+  
+  constructor() {
+    this.editing.subscribe(cell => {
+      currentlyEditing = cell;
+    });
+  }
+
   editingCell(element: Element|EventTarget) {
     const cell = closest(element, 'cdk-cell');
     
@@ -29,6 +37,14 @@ export class InlineEditEvents {
         map(editCell => editCell === cell),
         distinctUntilChanged(),
         );
+  }
+
+  doneEditingCell(element: Element|EventTarget) {
+    const cell = closest(element, 'cdk-cell');
+    
+    if (this.currentlyEditing === cell) {
+      this.editing.next(null);
+    }
   }
 
   hoveringOnRow(element: Element|EventTarget) {
@@ -98,7 +114,9 @@ export class CdkTableInlineEdit<T> extends Destroyable {
                   scrollStrategy: this.overlay.scrollStrategies.reposition({autoClose: true}),
                 });
         
-                this.overlayRef.detachments().pipe(mapTo(null)).subscribe(this.inlineEditEvents.editing);
+                this.overlayRef.detachments().subscribe(() => {
+                  this.inlineEditEvents.doneEditingCell(this.elementRef.nativeElement!);
+                });
               }
 
               // For now, using a template portal but we should support a component
