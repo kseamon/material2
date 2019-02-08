@@ -64,7 +64,7 @@ export class CdkTableInlineEdit<T> extends Destroyable {
                   scrollStrategy: overlay.scrollStrategies.reposition({autoClose: true}),
                 });
         
-                this.overlayRef.detachments().pipe(mapTo(false)).subscribe(this.opened);
+                this.overlayRef.detachments().pipe(mapTo(null)).subscribe(this.inlineEditEvents.editing);
               }
 
               // For now, using a template portal but we should support a component
@@ -103,7 +103,7 @@ export class InlineEditEvents {
     
     return this.editing.pipe(
     // todo - might need to play with this a bit
-        map(state => state.cell === cell),
+        map(editCell => editCell === cell),
         distinctUntilChanged(),
         );
   }
@@ -220,7 +220,6 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
 
 // TODO: move to a separate file
 // TODO: will this work from inside the popup? probably need to come up with something
-// akin to getClosestDialog to find the opened subject
 @Directive({
   selector: 'button[cdkInlineEditOpen]',
   host: {
