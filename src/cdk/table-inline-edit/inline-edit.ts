@@ -11,7 +11,7 @@ import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Injectable, Input
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
 import {fromEvent, timer, ReplaySubject, Subject} from 'rxjs';
-import {audit, debounceTime, distinctUntilChanged, filter, first, map, mapTo, takeUntil} from 'rxjs/operators';
+import {audit, debounceTime, distinctUntilChanged, filter, map, mapTo, takeUntil} from 'rxjs/operators';
 
 const HOVER_DELAY_MS = 30;
 
@@ -257,6 +257,16 @@ export class CdkTableInlineEditOpen {
     this.inlineEditEvents.editing.next(closest(this.elementRef.nativeElement!, 'cdk-cell'));
   }
 }
+
+/*@Component({
+  template: `
+    <form>
+      <ng-template [cdkPortalOutlet]="selectedPortal"></ng-template>
+    </div>
+  `
+})
+export class CdkTableInlineEditLens {
+}*/
 
 function closest(element: EventTarget|Element|null|undefined, className: string) {
   if (!(element instanceof Node)) return null;

@@ -12,10 +12,13 @@
         [cdkInlineEdit]="nameEdit">
       {{element.name}}
       <ng-template #nameEdit>
-        Inline edit {{element.name}}!
+        <div style="background-color: white;">
+          Inline edit:
+          <input [(ngModel)]="element.name">
+        </div>
       </ng-template>
       <span *cdkCellOverlay>
-        <button cdkInlineEditOpen>Open</button>
+        <button cdkInlineEditOpen>Edit</button>
       </span>
     </td>
   </ng-container>
