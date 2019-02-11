@@ -266,6 +266,8 @@ export class InlineEditRef {
   constructor(
       private readonly _form: ControlContainer,
       private readonly _inlineEditEvents: InlineEditEvents,) {
+        console.log(_form);
+        _form.valueChanges!.subscribe(value => console.log('update', value));
         _form.valueChanges!.pipe(first()).subscribe(() => this.updateRevertValue());
       }
   
@@ -273,7 +275,7 @@ export class InlineEditRef {
     this._revertFormValue = this._form.value;
   }
   
-  close() {
+  close(preserveFormValues = false) {
     this._inlineEditEvents.editing.next(null);
   }
 
@@ -327,7 +329,8 @@ export class CdkTableInlineEditControl {
   }
 
   onEscape() {
-    this.inlineEditRef.close();
+    // todo - allow this behavior to be customized as well
+    this.inlineEditRef.close(true);
   }
 
   onDocumentClick(evt: Event) {
@@ -336,10 +339,11 @@ export class CdkTableInlineEditControl {
     switch(this.clickOutBehavior) {
       case 'submit':
         this.elementRef.nativeElement!.dispatchEvent(new Event('submit'));
-        // Fall through
-      case 'close':
         this.inlineEditRef.close();
-        // Fall through
+        break;
+      case 'close':
+        this.inlineEditRef.close(true);
+        break;
       default:
         break;
     }
