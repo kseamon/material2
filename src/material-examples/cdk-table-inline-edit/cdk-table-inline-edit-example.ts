@@ -1,5 +1,6 @@
 import {DataSource} from '@angular/cdk/collections';
 import {Component} from '@angular/core';
+import {NgForm} from '@angular/forms';
 import {BehaviorSubject, Observable} from 'rxjs';
 
 export interface PeriodicElement {
@@ -43,6 +44,11 @@ const ELEMENT_DATA: PeriodicElement[] = [
 export class CdkTableInlineEditExample {
   displayedColumns: string[] = ['position', 'name', 'weight', 'symbol'];
   dataSource = new ExampleDataSource();
+  
+  onSubmit(evt: Event, element: PeriodicElement, f: NgForm) {
+    console.log('submit!', evt, element, f && f.value);
+    element.name = f.value.name;
+  }
 }
 
 /**

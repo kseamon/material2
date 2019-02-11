@@ -8,11 +8,12 @@
 
 import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Injectable, Input, OnDestroy, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
 /*import {DOCUMENT} from '@angular/common';*/
+import {ControlContainer} from '@angular/forms';
 import {FocusTrap, FocusTrapFactory} from '@angular/cdk/a11y';
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
 import {fromEvent, timer, ReplaySubject, Subject} from 'rxjs';
-import {audit, debounceTime, distinctUntilChanged, filter, map, mapTo, takeUntil} from 'rxjs/operators';
+import {audit, debounceTime, distinctUntilChanged, filter, first, map, mapTo, share, takeUntil} from 'rxjs/operators';
 
 const HOVER_DELAY_MS = 30;
 
@@ -23,6 +24,9 @@ export class InlineEditEvents {
   readonly mouseMove = new Subject<Element|null>();
 
   protected currentlyEditing: Element|null = null;
+  
+  protected readonly hoveringDistinct = this.hovering.pipe(distinctUntilChanged(), share());
+  protected readonly editingDistinct = this.editing.pipe(distinctUntilChanged(), share());
   
   constructor() {
     this.editing.subscribe(cell => {
@@ -50,14 +54,12 @@ export class InlineEditEvents {
   hoveringOnRow(element: Element|EventTarget) {
     let row: Element|null = null;
     
-    // super important that this is outside of zone
-    return this.hovering.pipe(
+    return this.hoveringDistinct.pipe(
         map(hoveredRow => hoveredRow === (row || (row = closest(element, 'cdk-row')))),
         audit((hovering) => hovering ?
             this.mouseMove.pipe(filter(hoveredRow => hoveredRow === row)) :
             timer(HOVER_DELAY_MS)),
         distinctUntilChanged(),
-        filter((hovering, index) => hovering || index > 1),
         );
   }
 }
@@ -83,6 +85,7 @@ export class CdkTableInlineEdit<T> extends Destroyable {
 
   protected focusTrap?: FocusTrap;
   protected overlayRef?: OverlayRef;
+  protected portal?: TemplatePortal;
 
   constructor(
       protected readonly elementRef: ElementRef,
@@ -104,6 +107,7 @@ export class CdkTableInlineEdit<T> extends Destroyable {
                 // TODO: work out details of positioning relative to cell.
                 this.overlayRef = this.overlay.create({
                   // TODO: this should be configurable
+                  disposeOnNavigation: true,
                   positionStrategy: this.overlay.position().flexibleConnectedTo(this.elementRef)
                       .withGrowAfterOpen()
                       .withPush()
@@ -118,21 +122,7 @@ export class CdkTableInlineEdit<T> extends Destroyable {
         
                 this.focusTrap = this.focusTrapFactory.create(this.overlayRef.overlayElement);
         
-                this.overlayRef.keydownEvents()
-                    .pipe(filter(evt => evt.key === 'Enter' || evt.key === 'Escape'))
-                    .subscribe(() => {
-                      // todo - escape should undo any changes made
-                      // to this end, ideally this whole thing would be some
-                      // kind of form control...
-                      
-                      // alternatively make this something that we can forward
-                      // to it via a provider
-                      
-                      
-                      // todo - need to generalize this to something that the
-                      // popup can notify us of.
-                      this.overlayRef!.detach();
-                    });
+                this.portal = new TemplatePortal(this.cdkInlineEdit, this.viewContainerRef);
         
                 this.overlayRef.detachments().subscribe(() => {
                   if (closest(document.activeElement, 'cdk-overlay-pane') ===
@@ -140,12 +130,10 @@ export class CdkTableInlineEdit<T> extends Destroyable {
                     this.elementRef.nativeElement!.focus();
                   }
                   this.inlineEditEvents.doneEditingCell(this.elementRef.nativeElement!);
-                  
                 });
               }
-      
-              // TODO: Is it better to create a portal once and reuse it?
-              this.overlayRef.attach(new TemplatePortal(this.cdkInlineEdit, this.viewContainerRef));
+
+              this.overlayRef.attach(this.portal!);
               this.focusTrap!.focusInitialElementWhenReady();
               
             } else if (this.overlayRef) {
@@ -170,7 +158,6 @@ export class CdkTableInlineEdit<T> extends Destroyable {
 })
 export class CdkTableInlineEditable extends Destroyable implements AfterViewInit {
   constructor(
-/*      @Inject(DOCUMENT) protected document: any,*/
       protected readonly elementRef: ElementRef,
       protected readonly events: InlineEditEvents,
       protected readonly ngZone: NgZone) {
@@ -186,7 +173,6 @@ export class CdkTableInlineEditable extends Destroyable implements AfterViewInit
       fromEvent<MouseEvent>(element, 'mouseover').pipe(
           takeUntil(this.destroyed),
           toClosest('cdk-row'),
-          distinctUntilChanged(),
           ).subscribe(this.events.hovering);
       fromEvent<MouseEvent>(element, 'mouseleave').pipe(
           takeUntil(this.destroyed),
@@ -198,20 +184,11 @@ export class CdkTableInlineEditable extends Destroyable implements AfterViewInit
           toClosest('cdk-row'),
           ).subscribe(this.events.mouseMove);
     
-      fromEvent<KeyboardEvent>(element, 'keydown').pipe(
+      fromEvent<KeyboardEvent>(element, 'keyup').pipe(
           takeUntil(this.destroyed),
           filter(event => event.key === 'Enter'),
           toClosest('cdk-cell'),
           ).subscribe(this.events.editing);
-
-          // close inline edit on click out
-/*      if (document && document.body instanceof Element) {
-        fromEvent<MouseEvent>(element, 'keydown').pipe(
-            takeUntil(this.destroyed),
-            filter(event => event.key === 'Enter'),
-            toClosest('cdk-cell'),
-            ).subscribe(this.events.editing);
-      }*/
     });
   }
 }
@@ -225,9 +202,10 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
   constructor(
       protected readonly elementRef: ElementRef,
       protected readonly inlineEditEvents: InlineEditEvents,
-      protected readonly viewContainerRef: ViewContainerRef,
       protected readonly ngZone: NgZone,
-      protected readonly templateRef: TemplateRef<any>) {
+      protected readonly templateRef: TemplateRef<any>,
+      protected readonly viewContainerRef: ViewContainerRef,
+      ) {
     super();
   }
   
@@ -261,10 +239,12 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
 
 // TODO: move to a separate file
 // TODO: will this work from inside the popup? probably need to come up with something
+// TODO: this one might need a separate version for button vs not button
+// different host bindings
 @Directive({
-  selector: 'button[cdkInlineEditOpen]',
+  selector: '[cdkInlineEditOpen]',
   host: {
-    '(click)': 'openInlineEdit()',
+    '(click)': 'openInlineEdit($event)',
     'type': 'button', // Prevents accidental form submits.
   }
 })
@@ -273,12 +253,147 @@ export class CdkTableInlineEditOpen {
       protected readonly elementRef: ElementRef,
       protected readonly inlineEditEvents: InlineEditEvents,) {}
       
-  openInlineEdit() {
+  openInlineEdit(evt: Event) {
     this.inlineEditEvents.editing.next(closest(this.elementRef.nativeElement!, 'cdk-cell'));
+    evt.stopPropagation();
   }
 }
 
+@Injectable()
+export class InlineEditRef {
+  private _revertFormValue: any;
 
+  constructor(
+      private readonly _form: ControlContainer,
+      private readonly _inlineEditEvents: InlineEditEvents,) {
+        _form.valueChanges!.pipe(first()).subscribe(() => this.updateRevertValue());
+      }
+  
+  updateRevertValue() {
+    this._revertFormValue = this._form.value;
+  }
+  
+  close() {
+    this._inlineEditEvents.editing.next(null);
+  }
+
+  reset() {
+    this._form.reset(this._revertFormValue);
+  }
+}
+
+export type InlineEditClickOutBehavior = 'close' | 'submit' | 'nothing';
+
+@Directive({
+  selector: 'form[cdkInlineEditControl]',
+  host: {
+    '(ngSubmit)': 'onSubmit()',
+    '(keydown.enter)': 'onEnter(true)',
+    '(keyup.enter)': 'onEnter(false)',
+    '(keyup.escape)': 'onEscape()',
+    '(document:click)': 'onDocumentClick($event)',
+  },
+  providers: [InlineEditRef],
+})
+export class CdkTableInlineEditControl {
+  @Input() clickOutBehavior = 'close';
+
+  private _enterPressed = false;
+  private _submitPending = false;
+
+  constructor(
+      protected readonly elementRef: ElementRef,
+      protected readonly inlineEditRef: InlineEditRef,) {}
+
+  onSubmit() {
+    this.inlineEditRef.updateRevertValue();
+    
+    // If the enter key is currently pressed, delay closing the popup so that
+    // the keyUp event does not cause it to immediately reopen.
+    if (this._enterPressed) {
+      this._submitPending = true;
+    } else {
+      this.inlineEditRef.close();
+    }
+  }
+
+  onEnter(pressed: boolean) {
+    if (this._submitPending) {
+      this.inlineEditRef.close();
+      return;
+    }
+    
+    this._enterPressed = pressed;
+  }
+
+  onEscape() {
+    this.inlineEditRef.close();
+  }
+
+  onDocumentClick(evt: Event) {
+    if (closest(evt.target, 'cdk-overlay-pane')) return;
+    
+    switch(this.clickOutBehavior) {
+      case 'submit':
+        this.elementRef.nativeElement!.dispatchEvent(new Event('submit'));
+        // Fall through
+      case 'close':
+        this.inlineEditRef.close();
+        // Fall through
+      default:
+        break;
+    }
+  }
+}
+
+@Directive({
+  selector: 'button[cdkInlineEditRevert]',
+  host: {
+    '(click)': 'revertInlineEdit()',
+    'type': 'button', // Prevents accidental form submits.
+  }
+})
+export class CdkTableInlineEditRevert {
+  constructor(
+      protected readonly inlineEditRef: InlineEditRef,) {}
+      
+  revertInlineEdit() {
+    this.inlineEditRef.reset();
+  }
+}
+
+@Directive({
+  selector: 'button[cdkInlineEditRevertAndClose]',
+  host: {
+    '(click)': 'revertInlineEdit()',
+    'type': 'button', // Prevents accidental form submits.
+  }
+})
+export class CdkTableInlineEditRevertAndClose {
+  constructor(
+      protected readonly inlineEditRef: InlineEditRef,) {}
+      
+  revertInlineEdit() {
+    this.inlineEditRef.reset();
+    this.inlineEditRef.close();
+  }
+}
+
+@Directive({
+  selector: 'button[cdkInlineEditClose]',
+  host: {
+    '(click)': 'closeInlineEdit()',
+    'type': 'button', // Prevents accidental form submits.
+  }
+})
+export class CdkTableInlineEditClose {
+  constructor(
+      protected readonly inlineEditRef: InlineEditRef,) {}
+      
+  closeInlineEdit() {
+    this.inlineEditRef.close();
+  }
+}
 
 function closest(element: EventTarget|Element|null|undefined, className: string) {
   if (!(element instanceof Node)) return null;

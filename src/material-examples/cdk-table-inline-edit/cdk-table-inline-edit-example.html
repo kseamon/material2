@@ -13,8 +13,14 @@
       {{element.name}}
       <ng-template #nameEdit>
         <div style="background-color: white;">
-          Inline edit:
-          <input [(ngModel)]="element.name" cdkFocusInitial>
+          <form #f="ngForm" cdkInlineEditControl (ngSubmit)="onSubmit($event, element, f)">
+            <!-- Edit a: <input [(ngModel)]="element.name" name="name" cdkFocusInitial> -->
+            Edit b: <input [ngModel]="element.name" name="name" cdkFocusInitial>
+            <br>
+            <button type="submit">Confirm</button>
+            <button cdkInlineEditRevert>Revert</button>
+            <button cdkInlineEditClose>Close</button>
+          </form>
         </div>
       </ng-template>
       <span *cdkCellOverlay>

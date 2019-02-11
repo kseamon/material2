@@ -8,10 +8,10 @@
 
 /*import {CommonModule} from '@angular/common';*/
 import {NgModule} from '@angular/core';
-import {CdkTableInlineEdit, CdkTableCellOverlay, CdkTableInlineEditable, CdkTableInlineEditOpen} from './inline-edit';
+import {CdkTableInlineEdit, CdkTableCellOverlay, CdkTableInlineEditControl, CdkTableInlineEditRevert, CdkTableInlineEditRevertAndClose, CdkTableInlineEditClose, CdkTableInlineEditable, CdkTableInlineEditOpen} from './inline-edit';
 
 const EXPORTED_DECLARATIONS = [
-  CdkTableInlineEdit, CdkTableCellOverlay, CdkTableInlineEditable, CdkTableInlineEditOpen,
+  CdkTableInlineEdit, CdkTableCellOverlay, CdkTableInlineEditControl, CdkTableInlineEditRevert, CdkTableInlineEditRevertAndClose, CdkTableInlineEditClose, CdkTableInlineEditable, CdkTableInlineEditOpen,
 ];
 
 @NgModule({
