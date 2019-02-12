@@ -6,8 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Injectable, Input, OnDestroy, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
-/*import {DOCUMENT} from '@angular/common';*/
+import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Injectable, Input, OnDestroy, OnInit, Output, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
 import {ControlContainer} from '@angular/forms';
 import {FocusTrap, FocusTrapFactory} from '@angular/cdk/a11y';
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
@@ -260,22 +259,35 @@ export class CdkTableInlineEditOpen {
 }
 
 @Injectable()
-export class InlineEditRef {
+export class InlineEditRef implements OnDestroy {
+  private readonly finalValueSubject = new Subject<any>;
+  readonly finalValue = this.valueChangesSubject.asObservable();
+
   private _revertFormValue: any;
 
   constructor(
       private readonly _form: ControlContainer,
-      private readonly _inlineEditEvents: InlineEditEvents,) {
-        console.log(_form);
-        _form.valueChanges!.subscribe(value => console.log('update', value));
-        _form.valueChanges!.pipe(first()).subscribe(() => this.updateRevertValue());
-      }
+      private readonly _inlineEditEvents: InlineEditEvents,) {}
   
-  updateRevertValue() {
-    this._revertFormValue = this._form.value;
+  init(previousFormValue: any) {
+    this._form.valueChanges!.pipe(first()).subscribe((value) => {
+      if (formValues) {
+        this._form.setValue(previousFormValue);
+      }
+      this.updateRevertValue(previousFormValue);
+    });
   }
   
-  close(preserveFormValues = false) {
+  ngOnDestroy() {
+    this.finalValueSubject.next(this._form.value);
+    this.finalValueSubject.complete();
+  }
+  
+  updateRevertValue(formValue?: any) {
+    this._revertFormValue = formValue || this._form.value;
+  }
+  
+  close() {
     this._inlineEditEvents.editing.next(null);
   }
 
@@ -297,8 +309,11 @@ export type InlineEditClickOutBehavior = 'close' | 'submit' | 'nothing';
   },
   providers: [InlineEditRef],
 })
-export class CdkTableInlineEditControl {
+export class CdkTableInlineEditControl implements OnInit {
   @Input() clickOutBehavior = 'close';
+
+  @Input() preservedFormValue?: any;
+  @Output() readonly preservedFormValueChange = new EventEmitter<any>();
 
   private _enterPressed = false;
   private _submitPending = false;
@@ -306,6 +321,11 @@ export class CdkTableInlineEditControl {
   constructor(
       protected readonly elementRef: ElementRef,
       protected readonly inlineEditRef: InlineEditRef,) {}
+
+  ngOnInit() {
+    this.inlineEditRef.init(this.preservedFormValue);
+    this.inlineEditRef.finalValue.subscribe(this.preservedFormValueChange);
+  }
 
   onSubmit() {
     this.inlineEditRef.updateRevertValue();
@@ -330,7 +350,7 @@ export class CdkTableInlineEditControl {
 
   onEscape() {
     // todo - allow this behavior to be customized as well
-    this.inlineEditRef.close(true);
+    this.inlineEditRef.close();
   }
 
   onDocumentClick(evt: Event) {
@@ -339,11 +359,10 @@ export class CdkTableInlineEditControl {
     switch(this.clickOutBehavior) {
       case 'submit':
         this.elementRef.nativeElement!.dispatchEvent(new Event('submit'));
-        this.inlineEditRef.close();
-        break;
+        // Fall through
       case 'close':
-        this.inlineEditRef.close(true);
-        break;
+        this.inlineEditRef.close();
+        // Fall through
       default:
         break;
     }

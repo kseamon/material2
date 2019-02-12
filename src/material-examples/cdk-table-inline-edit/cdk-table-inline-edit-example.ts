@@ -45,6 +45,8 @@ export class CdkTableInlineEditExample {
   displayedColumns: string[] = ['position', 'name', 'weight', 'symbol'];
   dataSource = new ExampleDataSource();
   
+  readonly preservedValues = new WeakMap<PeriodicElement, any>();
+  
   onSubmit(evt: Event, element: PeriodicElement, f: NgForm) {
     console.log('submit!', evt, element, f && f.value);
     element.name = f.value.name;
