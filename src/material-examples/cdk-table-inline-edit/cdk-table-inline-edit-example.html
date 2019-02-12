@@ -19,7 +19,8 @@
               [preservedFormValue]="preservedValues.get(element)"
               (preservedFormValueChange)="preservedValues.set(element, $event)">
             <!-- Edit a: <input [(ngModel)]="element.name" name="name" cdkFocusInitial> -->
-            Edit b: <input [ngModel]="element.name" name="name" cdkFocusInitial>
+            <!-- Edit b: <input [ngModel]="element.name" name="name" cdkFocusInitial> -->
+            Edit c: <input ngModel name="name" cdkFocusInitial>
             <br>
             <button type="submit">Confirm</button>
             <button cdkInlineEditRevert>Revert</button>

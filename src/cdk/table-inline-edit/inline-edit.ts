@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, Injectable, Input, OnDestroy, OnInit, Output, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
+import {AfterViewInit, Directive, ElementRef, EmbeddedViewRef, EventEmitter, Injectable, Input, OnDestroy, OnInit, Output, NgZone, TemplateRef, ViewContainerRef} from '@angular/core';
 import {ControlContainer} from '@angular/forms';
 import {FocusTrap, FocusTrapFactory} from '@angular/cdk/a11y';
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
@@ -237,7 +237,6 @@ export class CdkTableCellOverlay extends Destroyable implements AfterViewInit {
 }
 
 // TODO: move to a separate file
-// TODO: will this work from inside the popup? probably need to come up with something
 // TODO: this one might need a separate version for button vs not button
 // different host bindings
 @Directive({
@@ -260,8 +259,8 @@ export class CdkTableInlineEditOpen {
 
 @Injectable()
 export class InlineEditRef implements OnDestroy {
-  private readonly finalValueSubject = new Subject<any>;
-  readonly finalValue = this.valueChangesSubject.asObservable();
+  private readonly _finalValueSubject = new Subject<any>();
+  readonly finalValue = this._finalValueSubject.asObservable();
 
   private _revertFormValue: any;
 
@@ -270,17 +269,20 @@ export class InlineEditRef implements OnDestroy {
       private readonly _inlineEditEvents: InlineEditEvents,) {}
   
   init(previousFormValue: any) {
-    this._form.valueChanges!.pipe(first()).subscribe((value) => {
-      if (formValues) {
-        this._form.setValue(previousFormValue);
-      }
+    // Wait for either the first value to be set, then override it with
+    // the previously entered value, if any.
+    this._form.valueChanges!.pipe(first()).subscribe(() => {
       this.updateRevertValue(previousFormValue);
+
+      if (previousFormValue) {
+        this.reset();
+      }
     });
   }
   
   ngOnDestroy() {
-    this.finalValueSubject.next(this._form.value);
-    this.finalValueSubject.complete();
+    this._finalValueSubject.next(this._form.value);
+    this._finalValueSubject.complete();
   }
   
   updateRevertValue(formValue?: any) {
@@ -349,7 +351,8 @@ export class CdkTableInlineEditControl implements OnInit {
   }
 
   onEscape() {
-    // todo - allow this behavior to be customized as well
+    // todo - allow this behavior to be customized as well, such as calling
+    // reset before close
     this.inlineEditRef.close();
   }
 
